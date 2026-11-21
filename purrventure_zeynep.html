@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PURRVENTURE — Zeynep's Cat Adventure</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+:root{--ink:#24233d;--pink:#ffb9d2;--cream:#fff4d9;--blue:#9de4f5}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#22223b;color:white;font-family:'Press Start 2P',monospace}
+body{display:grid;place-items:center;background:radial-gradient(ellipse at 50% 20%,#58618d,#22233d 72%)}
+#frame{position:relative;width:min(100vw,calc(100vh * 16 / 9));aspect-ratio:16/9;max-height:100vh;overflow:hidden;border:5px solid #f9d7e5;box-shadow:0 0 0 5px #383653,0 18px 70px #101020aa;background:#8edcf0}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+#hud{position:absolute;inset:12px 14px auto;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;text-shadow:3px 3px #39304f;font-size:10px;line-height:1.9}
+.hudbox{background:#292744d9;border:3px solid #fff0cf;padding:8px 10px;box-shadow:3px 3px #514766}
+#rightHud{display:flex;gap:7px;align-items:flex-start}
+#soundBtn{pointer-events:auto;border:3px solid #fff0cf;background:#292744;color:#fff;padding:9px;font:inherit;font-size:9px;cursor:pointer}
+#overlay{position:absolute;inset:0;display:grid;place-items:center;background:#2824409c;padding:20px}
+.panel{width:min(620px,94%);text-align:center;background:#fff1d9;color:#37304f;border:6px solid #fff;border-radius:5px;box-shadow:0 0 0 6px #59486e,9px 10px #27233d;padding:26px 22px}
+h1{font-size:clamp(19px,4vw,38px);line-height:1.5;margin:0 0 8px;color:#e86d9e;text-shadow:3px 3px #ffd2df}
+.subtitle{font-size:9px;line-height:2.2;margin:10px auto 20px;max-width:470px}
+button.main{font:inherit;font-size:11px;color:#fff;background:#e96e9e;border:0;border-bottom:6px solid #b54f7b;padding:15px 20px;cursor:pointer;box-shadow:0 0 0 3px #fff}
+button.main:active{transform:translateY(3px);border-bottom-width:3px}
+.small{font-size:8px;line-height:2.1;margin-top:18px;color:#716681}
+.hidden{display:none!important}
+#mobile{position:absolute;inset:auto 0 13px;display:none;justify-content:space-between;padding:0 15px;pointer-events:none}
+.pad{display:flex;gap:10px}
+.touch{pointer-events:auto;width:57px;height:54px;border:3px solid #fff0cf;background:#302b50cc;color:white;font:18px 'Press Start 2P';box-shadow:3px 4px #17152c;touch-action:none}
+#toast{position:absolute;top:22%;left:50%;transform:translateX(-50%);font-size:10px;color:#fff;text-shadow:3px 3px #49355e;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
+@media (pointer:coarse),(max-width:700px){#mobile{display:flex}#hud{font-size:8px}.hudbox{padding:5px 7px}#soundBtn{font-size:8px;padding:6px}.panel{padding:18px 14px}.small{font-size:7px}}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="game" width="480" height="270" aria-label="Purrventure pixel art platform oyunu"></canvas>
+<div id="hud" class="hidden">
+  <div class="hudbox">BALIK <span id="fish">0</span><br>YILDIZ <span id="stars">0</span></div>
+  <div id="rightHud"><div class="hudbox" id="world">PATI VADİSİ</div><button id="soundBtn">♫ AÇIK</button></div>
+</div>
+<div id="toast"></div>
+<div id="overlay">
+ <div class="panel">
+  <div style="font-size:22px;margin-bottom:12px;color:#e96e9e">*  /\_/\  *</div>
+  <h1>PURRVENTURE</h1>
+  <div style="font-size:9px;color:#8c709b">ZEYNEP'İN KEDİ MACERASI</div>
+  <p class="subtitle">Minik patiler, büyük maceralar!<br>Zeynep, bu büyülü dünya senin için hazırlandı.</p>
+  <button class="main" id="start">MACERAYA BAŞLA!</button>
+  <div class="small">← → / A D: HAREKET &nbsp; SPACE / ↑: ZIPLA<br>Balıkları topla, sırları keşfet, pati kapısını bul!</div>
+ </div>
+</div>
+<div id="mobile">
+ <div class="pad"><button class="touch" data-key="left">◀</button><button class="touch" data-key="right">▶</button></div>
+ <button class="touch" data-key="jump">↑</button>
+</div>
+</div>
+<script>
+(()=>{
+const c=document.getElementById('game'),ctx=c.getContext('2d');ctx.imageSmoothingEnabled=false;
+const W=480,H=270,overlay=document.getElementById('overlay'),hud=document.getElementById('hud');
+const fishEl=document.getElementById('fish'),starsEl=document.getElementById('stars'),worldEl=document.getElementById('world'),toastEl=document.getElementById('toast');
+const keys={left:false,right:false,jump:false};let state='title',sound=true,audio=null,musicTimer=null,musicStep=0,cam=0,fish=0,stars=0,frame=0,toastTimer=0;
+const levelWidth=3000,gravity=.27;
+const player={x:35,y:180,w:13,h:17,vx:0,vy:0,ground:false,face:1,anim:0,inv:0};
+const platforms=[
+[0,238,450,32],[115,204,48,9],[190,178,55,9],[280,211,54,9],[370,185,70,9],[485,220,90,18],
+[610,195,55,9],[700,164,60,9],[795,202,70,9],[920,225,110,13],[1080,190,65,9],[1170,158,65,9],
+[1280,195,90,9],[1420,225,100,13],[1550,190,70,9],[1660,165,75,9],[1775,205,80,9],[1900,232,100,20],
+[2050,195,70,9],[2150,165,65,9],[2260,190,85,9],[2400,220,110,18],[2560,190,70,9],[2680,230,170,40]
+];
+const fishies=[];for(let i=0;i<42;i++){let p=platforms[(i*3+2)%platforms.length];fishies.push({x:p[0]+12+(i%3)*12,y:p[1]-17-(i%2)*5,taken:false,bob:i*.8})}
+const starItems=[{x:345,y:150,taken:false},{x:1030,y:185,taken:false},{x:1730,y:125,taken:false},{x:2470,y:180,taken:false}];
+const enemies=[{x:545,y:222,min:520,max:585,v:.45},{x:1335,y:177,min:1300,max:1370,v:.55},{x:1980,y:214,min:1930,max:2010,v:.6},{x:2505,y:210,min:2440,max:2530,v:.5}];
+const checkpoints=[{x:960,active:false},{x:1920,active:false}];let spawnX=35;
+function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
+function rect(x,y,w,h,col){ctx.fillStyle=col;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+function px(x,y,col){rect(x,y,1,1,col)}
+function text(t,x,y,size=8,col='#fff'){ctx.font=`${size}px "Press Start 2P",monospace`;ctx.fillStyle=col;ctx.fillText(t,x,y)}
+function soundTone(freq=440,dur=.09,type='square',vol=.045){if(!sound)return;try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();let o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,audio.currentTime);g.gain.setValueAtTime(vol,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+dur);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+dur)}catch(e){}}
+function sfx(name){if(name==='jump'){soundTone(420,.08);setTimeout(()=>soundTone(620,.09),55)}if(name==='fish'){soundTone(740,.07);setTimeout(()=>soundTone(990,.12),65)}if(name==='star'){[660,830,990].forEach((n,i)=>setTimeout(()=>soundTone(n,.14),i*80))}if(name==='hit'){soundTone(170,.2,'sawtooth')}if(name==='win'){[523,659,784,1046].forEach((n,i)=>setTimeout(()=>soundTone(n,.25),i*140))}if(name==='meow'){soundTone(620,.08,'triangle');setTimeout(()=>soundTone(490,.13,'triangle'),90)}}
+const melody=[392,0,523,0,587,523,392,0,330,0,392,0,523,659,587,0,440,0,587,0,659,587,440,0,349,0,440,0,523,587,523,0];
+function music(){if(!sound||state!=='play')return;let n=melody[musicStep%melody.length];if(n)soundTone(n,.12,'square',.012);if(musicStep%4===0)soundTone(98,.09,'triangle',.018);musicStep++}
+function musicStart(){clearInterval(musicTimer);musicStep=0;musicTimer=setInterval(music,175)}
+function showToast(s){toastEl.textContent=s;toastEl.style.opacity=1;toastTimer=90}
+function drawCloud(x,y,s=1){rect(x,y,22*s,7*s,'#fff4e6');rect(x+5*s,y-5*s,12*s,7*s,'#fff4e6');rect(x+17*s,y+2*s,8*s,5*s,'#fff4e6');rect(x+4*s,y+7*s,18*s,2*s,'#d3eff2')}
+function drawBackground(){
+ let zone=cam<900?0:cam<1900?1:cam<2600?2:3;
+ let sky=['#8edcf0','#444b79','#a7d9f1','#edb6d0'][zone];rect(0,0,W,H,sky);
+ if(zone===0){rect(0,190,W,80,'#b6e9a2');for(let i=0;i<8;i++){let x=((i*83-cam*.22)%560+560)%560;drawCloud(x,35+(i%3)*22,.7+(i%2)*.25)}}
+ if(zone===1){rect(0,0,W,H,'#34385f');for(let i=0;i<45;i++){let x=(i*71-cam*.18)%W,y=(i*37)%155;px((x+W)%W,y,i%3?'#fff0c2':'#f7b9da')}for(let i=0;i<7;i++){let x=((i*91-cam*.25)%560+560)%560;rect(x,70,9,14,'#536c77');rect(x+2,65,5,5,'#a8e8bf')}}
+ if(zone===2){rect(0,0,W,H,'#9bdcf2');for(let i=0;i<7;i++){let x=((i*100-cam*.2)%560+560)%560;drawCloud(x,30+(i%3)*35,1.2)}}
+ if(zone===3){rect(0,0,W,H,'#403b68');for(let i=0;i<55;i++)px((i*43-cam*.2+W*2)%W,(i*29)%160,'#ffe5a7')}
+ // distant hills
+ for(let i=0;i<8;i++){let x=((i*100-cam*.35)%600+600)%600-30;rect(x,170,65,100,zone===1?'#465174':zone===3?'#625078':'#83c98d');rect(x+12,158,40,15,zone===1?'#465174':zone===3?'#625078':'#83c98d')}
+ if(zone===0){for(let i=0;i<7;i++){let x=((i*90-cam*.6)%550+550)%550;rect(x,196,4,9,'#fff0d0');rect(x-2,199,8,3,'#f6a8c9')}}
+}
+function drawPlatform(p){let [x,y,w,h]=p;let sx=Math.round(x-cam);if(sx+w<0||sx>W)return;
+ let zone=x<900?0:x<1900?1:x<2600?2:3;
+ let top=['#6fbd65','#a2d6a4','#e8f4ff','#bd8cc9'][zone],side=['#9a644e','#526b7a','#76a6c5','#74517e'][zone],edge=['#d4f39c','#d1f6ca','#fff5d8','#f6c4df'][zone];
+ rect(sx,y,w,h,side);rect(sx,y,w,4,top);rect(sx,y,w,2,edge);
+ for(let xx=8;xx<w-5;xx+=16){rect(sx+xx,y+8,2,2,'#ffffff33');if(h>14)rect(sx+xx+5,y+17,3,2,'#493f6044')}
+ if(zone===0){for(let xx=5;xx<w;xx+=21){rect(sx+xx,y-4,2,4,'#6fbd65');rect(sx+xx+2,y-5,2,3,'#b6e9a2')}}
+}
+function drawFish(x,y){let sx=Math.round(x-cam);rect(sx-4,y-2,7,5,'#f4a64e');rect(sx+2,y-4,3,3,'#f4a64e');rect(sx+2,y+2,3,3,'#f4a64e');px(sx-2,y-1,'#fff2bb');px(sx-3,y,'#65435a')}
+function drawCat(x,y,anim,face=1){let sx=Math.round(x-cam),sy=Math.round(y);let step=Math.floor(anim/5)%2;
+ // tail
+ rect(sx+(face===1?10:-2),sy+10,4,3,'#d98555');rect(sx+(face===1?13:-4),sy+7,3,4,'#d98555');
+ // body
+ rect(sx+2,sy+7,10,8,'#fff0d9');rect(sx+1,sy+10,12,5,'#d98555');rect(sx+3,sy+8,3,3,'#d98555');
+ // ears and head
+ rect(sx+2,sy+1,4,5,'#d98555');rect(sx+9,sy+1,4,5,'#d98555');rect(sx+3,sy+3,9,7,'#fff0d9');rect(sx+4,sy+2,2,2,'#f6a8bd');rect(sx+10,sy+2,2,2,'#f6a8bd');
+ // orange forehead patch
+ rect(sx+7,sy+3,3,3,'#d98555');
+ // eyes, nose, whiskers
+ px(sx+5,sy+6,'#342d4c');px(sx+10,sy+6,'#342d4c');px(sx+8,sy+8,'#e88ba7');
+ rect(sx+1,sy+8,3,1,'#a77d76');rect(sx+12,sy+8,3,1,'#a77d76');
+ // paws animation
+ rect(sx+2+(step?1:0),sy+14,3,3,'#fff0d9');rect(sx+9-(step?1:0),sy+14,3,3,'#fff0d9');
+ // little collar
+ rect(sx+6,sy+10,4,2,'#e96e9e');px(sx+8,sy+12,'#ffe28b');
+}
+function drawEnemy(e){let x=Math.round(e.x-cam),y=e.y;rect(x+2,y+5,10,8,'#8871a8');rect(x,y+8,14,5,'#8871a8');rect(x+3,y+2,3,5,'#8871a8');rect(x+9,y+2,3,5,'#8871a8');px(x+4,y+8,'#fff');px(x+9,y+8,'#fff');px(x+5,y+9,'#342d4c');px(x+10,y+9,'#342d4c');rect(x+4,y+13,3,2,'#51456f');rect(x+9,y+13,3,2,'#51456f')}
+function drawGate(){let x=2780-cam;rect(x,184,34,46,'#74517e');rect(x+4,188,26,42,'#e9a9d1');rect(x+9,194,16,36,'#7e5c9e');rect(x+14,202,6,6,'#fff1c4');text('EXIT',x-1,177,6,'#fff')}
+function draw(){
+ drawBackground();
+ platforms.forEach(drawPlatform);
+ fishies.forEach(f=>{if(!f.taken)drawFish(f.x,f.y+Math.sin(frame/12+f.bob)*2)});
+ starItems.forEach(s=>{if(!s.taken){let x=s.x-cam,y=s.y+Math.sin(frame/10)*2;text('★',x-4,y+4,10,'#ffe27b')}});
+ enemies.forEach(drawEnemy);
+ checkpoints.forEach(cp=>{let x=cp.x-cam;rect(x,204,3,32,cp.active?'#ffdf85':'#fff0d9');rect(x+3,204,12,8,cp.active?'#ff91b7':'#a6a0c5')});
+ drawGate();
+ if(player.inv%8<5||player.inv===0)drawCat(player.x,player.y,player.anim,player.face);
+ if(state==='play'&&player.y>H+30)respawn();
+}
+function update(){
+ frame++;
+ if(state!=='play')return;
+ let accel=.38, max=2.25;
+ if(keys.left){player.vx-=accel;player.face=-1}else if(keys.right){player.vx+=accel;player.face=1}else player.vx*=.78;
+ player.vx=Math.max(-max,Math.min(max,player.vx));
+ if(keys.jump&&player.ground){player.vy=-5.35;player.ground=false;sfx('jump')}
+ player.vy=Math.min(6,player.vy+gravity);
+ let oldY=player.y;player.x+=player.vx;player.x=Math.max(0,Math.min(levelWidth-player.w,player.x));player.y+=player.vy;player.ground=false;
+ for(let p of platforms){let [x,y,w,h]=p;if(player.x+player.w>x&&player.x<x+w&&oldY+player.h<=y+2&&player.y+player.h>=y&&player.vy>=0){player.y=y-player.h;player.vy=0;player.ground=true}}
+ if(player.ground&&Math.abs(player.vx)>.2)player.anim+=Math.abs(player.vx)*.9;else player.anim+=.15;
+ if(player.inv>0)player.inv--;
+ for(let f of fishies){if(!f.taken&&Math.abs(player.x+6-f.x)<11&&Math.abs(player.y+8-f.y)<13){f.taken=true;fish++;fishEl.textContent=fish;sfx('fish');showToast('+1 BALIK!')}}
+ for(let s of starItems){if(!s.taken&&Math.abs(player.x+6-s.x)<12&&Math.abs(player.y+8-s.y)<13){s.taken=true;stars++;starsEl.textContent=stars;sfx('star');showToast('GİZLİ YILDIZ!')}}
+ for(let e of enemies){e.x+=e.v;if(e.x<e.min||e.x>e.max)e.v*=-1;if(player.inv===0&&player.x+player.w>e.x&&player.x<e.x+14&&player.y+player.h>e.y+3&&player.y<e.y+15){if(player.vy>1&&player.y+player.h<e.y+10){e.x=-999;player.vy=-3.6;sfx('jump')}else{player.inv=75;player.vx=-player.face*2;player.vy=-2.5;sfx('hit');showToast('DİKKAT, PATİLER!')}}}
+ for(let cp of checkpoints){if(player.x>cp.x&&!cp.active){cp.active=true;spawnX=cp.x+8;showToast('KONTROL NOKTASI!');sfx('star')}}
+ let target=Math.max(0,Math.min(levelWidth-W,player.x-155));cam+=(target-cam)*.12;
+ if(player.x>2765){win()}
+ if(toastTimer>0){toastTimer--;if(toastTimer===0)toastEl.style.opacity=0}
+}
+function respawn(){player.x=spawnX;player.y=170;player.vx=0;player.vy=0;player.inv=90}
+function win(){state='win';clearInterval(musicTimer);sfx('win');overlay.classList.remove('hidden');overlay.innerHTML=`<div class="panel"><div style="font-size:22px;color:#e96e9e">*  /\_/\  * ✦</div><h1>BAŞARDIN ZEYNEP!</h1><p class="subtitle">Bütün patiler seni kutluyor!<br>Bu macera senin için hazırlandı.<br><br>🐟 ${fish} BALIK &nbsp; ★ ${stars} YILDIZ</p><button class="main" id="again">YENİDEN OYNA</button><div class="small">PATİ VADİSİ'NİN KAHRAMANI!</div></div>`;document.getElementById('again').onclick=reset}
+function reset(){fish=0;stars=0;fishEl.textContent='0';starsEl.textContent='0';fishies.forEach(f=>f.taken=false);starItems.forEach(s=>s.taken=false);enemies.forEach((e,i)=>{e.x=[545,1335,1980,2505][i]});checkpoints.forEach(c=>c.active=false);spawnX=35;player.x=35;player.y=180;player.vx=0;player.vy=0;cam=0;state='play';overlay.classList.add('hidden');hud.classList.remove('hidden');musicStart()}
+function start(){reset()}
+document.getElementById('start').onclick=start;
+document.getElementById('soundBtn').onclick=()=>{sound=!sound;document.getElementById('soundBtn').textContent=sound?'♫ AÇIK':'♫ KAPALI';if(sound&&state==='play')musicStart();else clearInterval(musicTimer)};
+function key(e,down){let k=e.key.toLowerCase();if(['arrowleft','arrowright','arrowup',' ','a','d','w'].includes(k))e.preventDefault();if(k==='arrowleft'||k==='a')keys.left=down;if(k==='arrowright'||k==='d')keys.right=down;if(k==='arrowup'||k==='w'||k===' ')keys.jump=down;if(down&&k==='escape'&&state==='play'){showToast('MÜZİK DÜĞMESİNDEN SESİ KAPATABİLİRSİN');}}
+addEventListener('keydown',e=>key(e,true));addEventListener('keyup',e=>key(e,false));addEventListener('blur',()=>{keys.left=keys.right=keys.jump=false});
+document.querySelectorAll('.touch').forEach(b=>{let k=b.dataset.key;const set=v=>{keys[k]=v};b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);set(true)});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>set(false)))});
+function loop(){update();draw();requestAnimationFrame(loop)}
+loop();
+})();
+</script>
+</body>
+</html>
